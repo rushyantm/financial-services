@@ -1,0 +1,33 @@
+name: Sync fork with upstream
+
+# Pulls anthropics/financial-services into this fork's main once a week,
+# MERGING (not force-overwriting) so the local .mcp.json fix is preserved.
+# If upstream ever edits the same lines, the merge conflicts and this job
+# fails loudly (you get GitHub's failure email) instead of silently dropping
+# either change. Run on demand any time via the "Run workflow" button.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC (~11:30 IST)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    # Don't run in downstream forks-of-this-fork
+    if: github.repository == 'rushyantm/financial-services'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge upstream/main into main
+        run: |
+          git config user.name "fork-sync[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/anthropics/financial-services.git
+          git fetch upstream main
+          git merge upstream/main --no-edit
+          git push origin HEAD:main
