@@ -23,7 +23,7 @@ Prompt only for the keys their cloud path needs. Don't ask for all eight.
 |---|---|
 | Vertex | `gcp_project_id` `gcp_region` `google_client_id` `google_client_secret` |
 | Bedrock | `aws_role_arn` `aws_region` |
-| Foundry | `azure_resource_name` `azure_api_key` |
+| Foundry | `azure_resource_name` `azure_api_key` — or keyless: `azure_resource_name` + Entra (see [Foundry keyless](#use-the-entra-token-for-foundry-keyless)) |
 | Gateway | `gateway_url` `gateway_token` `gateway_auth_header` `gateway_api_format` |
 | Gateway (`gateway_api_format=vertex`) | also `gcp_project_id` `gcp_region` |
 
@@ -167,6 +167,43 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/build-manifest.mjs" office manifest.xml \
 `graph_client_id` and `entra_sso=1`); the build script enforces this. It
 implies `gateway_auth_header=authorization`, so you can omit that key. Don't
 also set `gateway_token` — it's ignored, and the script warns.
+
+## Use the Entra token for Foundry (keyless)
+
+Foundry direct normally takes the resource's static `azure_api_key`. To drop the
+key and have each user authenticate with their own Entra identity, set
+`gateway_auth_source=entra` alongside `azure_resource_name` and leave
+`azure_api_key` out. The scope targets Azure's Cognitive Services resource, not
+an API you expose:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/build-manifest.mjs" office manifest.xml \
+  azure_resource_name=<your-foundry-resource> \
+  entra_sso=1 \
+  graph_client_id=<your-app-guid> \
+  entra_scope=https://cognitiveservices.azure.com/.default \
+  gateway_auth_source=entra
+```
+
+The add-in acquires an access token audienced to `cognitiveservices.azure.com`
+and sends it as `Authorization: Bearer` on every Foundry call, re-acquiring it
+before expiry. Azure validates the token, then checks that the user holds the
+**Cognitive Services User** role on the resource — no key is stored anywhere.
+The Entra app needs the Azure Cognitive Services `user_impersonation` delegated
+permission (not a self-exposed API); see [entra-app](entra-app.md). If both
+`azure_api_key` and `gateway_auth_source=entra` are present, the key is ignored.
+
+**Why `cognitiveservices.azure.com`, not `ai.azure.com`.** The add-in signs each
+user in through Nested App Authentication against your Entra app, and that
+per-user *delegated* flow pairs with the app's Azure Cognitive Services
+`user_impersonation` permission, whose audience is
+`https://cognitiveservices.azure.com`. This is the same scope Claude Desktop's
+Foundry sign-in uses, so an Entra app already registered for Desktop works
+unchanged. Microsoft's SDK and managed-identity docs use `https://ai.azure.com/.default`
+instead; a Foundry resource accepts both audiences, but that scope belongs to the
+credential-based SDK flow (`DefaultAzureCredential`, `az login`, service
+principal), which doesn't use an app-registration delegated permission. For the
+add-in's per-user sign-in, use `cognitiveservices.azure.com/.default`.
 
 **Entra setup:** see [entra-app](entra-app.md) — the *Gateway / bootstrap auth*
 row of the permissions table, plus the
